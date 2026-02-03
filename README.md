@@ -1,4 +1,4 @@
-# OpenEdX on AWS EKS
+# OpenEdX on AWS EKS 
 
 Working production deployment of OpenEdX on Kubernetes. Built with Terraform, runs on AWS, handles real traffic.
 
@@ -291,43 +291,9 @@ kubectl describe ingress openedx-lms-ingress -n openedx
 
 See [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for more details.
 
-## 🤝 Contributing
 
-Contributions are welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
 
-## 📄 License
 
-This project is licensed under the MIT License - see [LICENSE](LICENSE) file.
-
-## 📞 Support
-
-For support and questions:
-- Check the [documentation](docs/)
-- Review [troubleshooting guide](docs/TROUBLESHOOTING.md)
-- Open an issue on GitHub
-- Contact the infrastructure team
-
-## 🎯 Roadmap
-
-- [ ] Service mesh (Istio) integration
-- [ ] Multi-region deployment
-- [ ] GitOps with Flux CD
-- [ ] Advanced observability with Datadog/New Relic
-- [ ] Automated scaling policies
-- [ ] Multi-tenancy support
-- [ ] CI/CD pipeline with GitHub Actions
-- [ ] Terraform Cloud integration
-
-## 🙏 Acknowledgments
-
-- OpenEdX community
-- Tutor project
-- AWS documentation
-- Kubernetes community
 
 ---
 
