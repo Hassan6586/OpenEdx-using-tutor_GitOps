@@ -1,0 +1,286 @@
+---
+# Custom configuration for Tutor in production environment
+# This file should be placed in $TUTOR_ROOT/config.yml
+
+# OpenEdX Platform Settings
+DOCKER_REGISTRY: openedx
+DOCKER_IMAGE_OPENEDX: openedx/openedx:latest
+DOCKER_IMAGE_MYSQL: mysql:8.0
+DOCKER_IMAGE_MONGODB: mongo:6.0
+DOCKER_IMAGE_REDIS: redis:7.0
+DOCKER_IMAGE_ELASTICSEARCH: docker.elastic.co/elasticsearch/elasticsearch:7.17.0
+
+# Domain configuration
+LMS_HOST: openedx.example.com
+LMS_PORT: 80
+CMS_HOST: cms.openedx.example.com
+CMS_PORT: 80
+
+# Database configuration
+MYSQL_ROOT_USERNAME: root
+MYSQL_ROOT_PASSWORD: your-secure-password-here
+MYSQL_DATABASE: openedx
+MYSQL_USERNAME: openedx
+MYSQL_PASSWORD: your-secure-password-here
+MYSQL_HOST: openedx-mysql.openedx.svc.cluster.local
+MYSQL_PORT: 3306
+
+MONGODB_HOST: openedx-mongodb.openedx.svc.cluster.local
+MONGODB_PORT: 27017
+MONGODB_ROOT_USERNAME: admin
+MONGODB_ROOT_PASSWORD: your-secure-password-here
+MONGODB_DATABASE: openedx
+
+REDIS_HOST: openedx-redis.openedx.svc.cluster.local
+REDIS_PORT: 6379
+REDIS_PASSWORD: your-secure-password-here
+
+ELASTICSEARCH_HOST: openedx-elasticsearch.openedx.svc.cluster.local
+ELASTICSEARCH_PORT: 9200
+
+# Email configuration
+SMTP_HOST: smtp.example.com
+SMTP_PORT: 587
+SMTP_USERNAME: your-email@example.com
+SMTP_PASSWORD: your-email-password
+SMTP_USE_TLS: true
+CONTACT_EMAIL: admin@example.com
+
+# S3 Configuration for uploads
+AWS_STORAGE_BUCKET_NAME: openedx-uploads
+AWS_S3_REGION_NAME: us-east-1
+AWS_S3_CUSTOM_DOMAIN: d1234abcd.cloudfront.net
+AWS_S3_ENDPOINT_URL: https://s3.us-east-1.amazonaws.com
+AWS_DEFAULT_REGION: us-east-1
+
+# Cache configuration
+CACHES_DEFAULT_BACKEND: django_redis.cache.RedisCache
+CACHES_DEFAULT_LOCATION: "redis://{{ REDIS_HOST }}:{{ REDIS_PORT }}/1"
+
+# Session configuration
+SESSION_ENGINE: django.contrib.sessions.backends.cache
+SESSION_CACHE_ALIAS: default
+
+# OpenEdX specific settings
+COURSE_ID_PATTERN: ^[a-zA-Z0-9._-]+$
+LANGUAGE_CODE: en
+TIME_ZONE: UTC
+
+# Security settings
+SECURE_SSL_REDIRECT: true
+SECURE_HSTS_SECONDS: 31536000
+SECURE_HSTS_INCLUDE_SUBDOMAINS: true
+SECURE_HSTS_PRELOAD: true
+SESSION_COOKIE_SECURE: true
+CSRF_COOKIE_SECURE: true
+SECURE_BROWSER_XSS_FILTER: true
+SECURE_CONTENT_SECURITY_POLICY: true
+X_FRAME_OPTIONS: DENY
+
+# Authentication
+AUTH_PASSWORD_VALIDATORS:
+  - NAME: django.contrib.auth.password_validation.UserAttributeSimilarityValidator
+  - NAME: django.contrib.auth.password_validation.MinimumLengthValidator
+    OPTIONS:
+      min_length: 8
+  - NAME: django.contrib.auth.password_validation.CommonPasswordValidator
+  - NAME: django.contrib.auth.password_validation.NumericPasswordValidator
+
+# Logging
+LOGGING_CONFIG: python-json-logger
+LOG_LEVEL: INFO
+
+# Performance optimization
+DATABASE_POOL_SIZE: 30
+DATABASE_MAX_OVERFLOW: 50
+CELERY_ALWAYS_EAGER: false
+CELERY_BROKER_URL: "redis://{{ REDIS_HOST }}:{{ REDIS_PORT }}/2"
+CELERY_RESULT_BACKEND: "redis://{{ REDIS_HOST }}:{{ REDIS_PORT }}/3"
+
+# CDN configuration
+CDN_ENABLED: true
+CDN_URL: https://d1234abcd.cloudfront.net/
+
+# WAF and security headers
+X_CONTENT_TYPE_OPTIONS: nosniff
+X_XSS_PROTECTION: "1; mode=block"
+REFERRER_POLICY: "strict-origin-when-cross-origin"
+
+# Monitoring and observability
+SENTRY_DSN: ""  # Add Sentry DSN if using error tracking
+ENABLE_NEWRELIC: false
+ENABLE_DATADOG: false
+
+# Custom features
+FEATURES:
+  ENABLE_REGISTRATION: true
+  ENABLE_COURSEWARE: true
+  ENABLE_COURSE_DISCOVERY: true
+  ENABLE_LEARNER_DASHBOARD: true
+  ENABLE_DISCUSSION: true
+  ENABLE_NOTEBOOK: false
+  ENABLE_LTI: true
+  ENABLE_SSL: true
+
+# Content delivery
+XBLOCK_SETTINGS:
+  xmodule_display:
+    default_template_engine: django_template
+
+# Studio/CMS specific
+STUDIO_NAME: Course Studio
+CMS_ENABLE_ENROLLMENT_COMMENTS: true
+
+# Notes configuration
+ALLOW_NOTES: true
+NOTES_DISABLE_CSS: false
+
+# Certificates
+CERTIFICATES_HTML_VIEW_ENABLED: true
+CERTIFICATES_GENERATION_ENABLED: true
+
+# Mobile app specific
+XBLOCK_OPEN_IN_BROWSER_URL_WHITELIST:
+  - youtube.com
+  - vimeo.com
+  - youtu.be
+
+# Proctoring (if needed)
+PROCTORING_BACKENDS:
+  software_secure:
+    ENABLED: true
+    URL: https://api.softwaresecure.com
+
+# Extended profile fields
+EDXAPP_EXTRA_STUDENT_FIELDS:
+  - name: year_of_birth
+    value: 1990
+  - name: gender
+    value: m
+
+# Bulk email configuration
+BULK_EMAIL_DEFAULT_FROM_EMAIL: "noreply@example.com"
+BULK_EMAIL_BATCH_SIZE: 100
+BULK_EMAIL_RETRY_DELAY: 30
+
+# Microservice authentication
+CROSS_DOMAIN_MFE_COOKIE_NAME: "frontend-auth"
+CROSS_DOMAIN_MFE_COOKIE_DOMAIN: ".example.com"
+
+# License settings
+ENABLE_LICENSE_MANAGEMENT: false
+
+# Export to analytics
+DATA_EXPORT_BLOCK_TYPES: []
+
+# Terms of service
+ENFORCE_TOS_FOR_LOGIN: true
+
+# API Rate limiting
+API_RATE_LIMIT: "500/hour"
+
+# Kubernetes specific settings
+# These settings should be applied via ConfigMaps in Kubernetes
+KUBERNETES_ENABLED: true
+REPLICA_COUNT_LMS: 3
+REPLICA_COUNT_CMS: 2
+REPLICA_COUNT_WORKERS: 3
+
+# Resource limits
+CONTAINER_RESOURCES_LMS:
+  requests:
+    memory: 512Mi
+    cpu: 500m
+  limits:
+    memory: 1Gi
+    cpu: 1000m
+
+CONTAINER_RESOURCES_CMS:
+  requests:
+    memory: 256Mi
+    cpu: 400m
+  limits:
+    memory: 512Mi
+    cpu: 800m
+
+CONTAINER_RESOURCES_WORKERS:
+  requests:
+    memory: 256Mi
+    cpu: 200m
+  limits:
+    memory: 512Mi
+    cpu: 500m
+
+# HPA settings
+HPA_MIN_REPLICAS: 3
+HPA_MAX_REPLICAS: 10
+HPA_TARGET_CPU_UTILIZATION: 70
+HPA_TARGET_MEMORY_UTILIZATION: 80
+
+# Network policy settings
+NETWORK_POLICY_ENABLED: true
+NETWORK_POLICY_INGRESS_NAMESPACES:
+  - ingress-nginx
+  - monitoring
+
+# Pod security policy
+POD_SECURITY_POLICY: restricted
+RUN_AS_NON_ROOT: true
+RUN_AS_USER: 1000
+FS_GROUP: 1000
+
+# Healthcheck configuration
+HEALTHCHECK_ENABLED: true
+HEALTHCHECK_LIVENESS_PROBE_INITIAL_DELAY: 30
+HEALTHCHECK_LIVENESS_PROBE_PERIOD: 10
+HEALTHCHECK_READINESS_PROBE_INITIAL_DELAY: 10
+HEALTHCHECK_READINESS_PROBE_PERIOD: 5
+
+# Backup and recovery settings
+BACKUP_ENABLED: true
+BACKUP_SCHEDULE: "0 2 * * *"  # Daily at 2 AM UTC
+BACKUP_RETENTION_DAYS: 30
+BACKUP_S3_BUCKET: openedx-backups
+BACKUP_ENCRYPTION: true
+
+# Disaster recovery
+DR_ENABLED: true
+DR_REPLICA_REGION: us-west-2
+DR_BACKUP_FREQUENCY: daily
+
+# TLS/SSL settings
+TLS_ENABLED: true
+TLS_CERTIFICATE_PATH: /etc/ssl/certs/openedx.crt
+TLS_PRIVATE_KEY_PATH: /etc/ssl/private/openedx.key
+TLS_MIN_VERSION: "1.2"
+TLS_CIPHERS: "HIGH:!aNULL:!MD5"
+
+# HTTP/2 settings
+HTTP2_ENABLED: true
+HTTP2_PUSH_ENABLED: true
+
+# Gzip compression
+GZIP_ENABLED: true
+GZIP_LEVEL: 6
+GZIP_MIN_SIZE: 1024
+
+# Rate limiting
+RATE_LIMIT_ENABLED: true
+RATE_LIMIT_REQUESTS_PER_MINUTE: 60
+RATE_LIMIT_LOGIN_ATTEMPTS: 5
+
+# CORS settings
+CORS_ALLOW_CREDENTIALS: true
+CORS_ALLOWED_ORIGINS:
+  - "https://openedx.example.com"
+  - "https://cms.openedx.example.com"
+  - "https://mobile.example.com"
+
+# Platform name and branding
+PLATFORM_NAME: "OpenEdX"
+STUDIO_NAME: "Course Studio"
+SITE_NAME: "Learning Platform"
+
+# Footer and contact information
+FOOTER_SUPPORT_LINK: "https://support.example.com"
+FOOTER_FEEDBACK_LINK: "https://feedback.example.com"

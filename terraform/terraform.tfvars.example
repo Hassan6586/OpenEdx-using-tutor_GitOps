@@ -1,0 +1,45 @@
+# OpenEdX on AWS EKS - Example Terraform Variables
+# Copy this file to terraform.tfvars and update with your values
+
+# AWS Configuration
+aws_region = "us-east-1"
+
+# Cluster Configuration
+cluster_name         = "openedx"
+environment          = "prod"
+kubernetes_version   = "1.33"
+
+# OpenEdX Configuration
+openedx_domain     = "openedx.example.com"
+openedx_namespace  = "openedx"
+
+# VPC Configuration
+vpc_cidr = "10.0.0.0/16"
+
+# Database Configuration
+mysql_db_name              = "openedx"
+mysql_username             = "openedx"
+mongodb_name               = "openedx"
+elasticsearch_version      = "8.10"
+redis_node_type            = "cache.t3.micro"
+
+# RDS Configuration
+rds_instance_class      = "db.t3.medium"
+rds_allocated_storage   = 100
+rds_backup_retention    = 30
+enable_multi_az         = true
+
+# EKS Node Configuration
+min_worker_nodes       = 3
+max_worker_nodes       = 10
+desired_worker_nodes   = 5
+
+# Network Configuration
+enable_single_nat_gateway = false  # Set to true for dev/staging to reduce costs
+
+# Monitoring
+enable_monitoring = true
+
+# ArgoCD
+argocd_namespace    = "argocd"
+argocd_chart_version = "7.0.0"

@@ -1,0 +1,419 @@
+---
+# OpenEdX LMS Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openedx-lms
+  namespace: openedx
+  labels:
+    app: openedx
+    component: lms
+    version: v1
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: openedx
+      component: lms
+  template:
+    metadata:
+      labels:
+        app: openedx
+        component: lms
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: openedx-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      
+      initContainers:
+        - name: wait-for-db
+          image: busybox:1.35
+          command: ['sh', '-c', 'until nc -zv $MYSQL_HOST $MYSQL_PORT; do echo waiting for DB; sleep 2; done']
+          env:
+            - name: MYSQL_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: MYSQL_HOST
+            - name: MYSQL_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: MYSQL_PORT
+
+      containers:
+        - name: lms
+          image: openedx/lms:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+            - name: metrics
+              containerPort: 9000
+              protocol: TCP
+          
+          env:
+            - name: LMS_DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: OPENEDX_DOMAIN
+            - name: MYSQL_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: MYSQL_HOST
+            - name: MYSQL_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: MYSQL_PORT
+            - name: MYSQL_DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: MYSQL_DATABASE
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: openedx-db-credentials
+                  key: mysql_username
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: openedx-db-credentials
+                  key: mysql_password
+            - name: MONGODB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: MONGODB_HOST
+            - name: MONGODB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: MONGODB_PORT
+            - name: MONGODB_DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: MONGODB_DATABASE
+            - name: MONGODB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: openedx-db-credentials
+                  key: mongodb_username
+            - name: MONGODB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: openedx-db-credentials
+                  key: mongodb_password
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: REDIS_HOST
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: REDIS_PORT
+            - name: REDIS_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: openedx-db-credentials
+                  key: redis_auth_token
+            - name: OPENSEARCH_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: OPENSEARCH_HOST
+            - name: AWS_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: AWS_REGION
+            - name: S3_STATIC_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: S3_STATIC_BUCKET
+            - name: ENVIRONMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: ENVIRONMENT
+          
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          
+          volumeMounts:
+            - name: static
+              mountPath: /var/lib/openedx/static
+            - name: media
+              mountPath: /var/lib/openedx/media
+            - name: logs
+              mountPath: /var/log/openedx
+      
+      volumes:
+        - name: static
+          persistentVolumeClaim:
+            claimName: openedx-static-pvc
+        - name: media
+          persistentVolumeClaim:
+            claimName: openedx-media-pvc
+        - name: logs
+          emptyDir: {}
+
+---
+# OpenEdX CMS Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openedx-cms
+  namespace: openedx
+  labels:
+    app: openedx
+    component: cms
+    version: v1
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: openedx
+      component: cms
+  template:
+    metadata:
+      labels:
+        app: openedx
+        component: cms
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8010"
+    spec:
+      serviceAccountName: openedx-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      
+      initContainers:
+        - name: wait-for-db
+          image: busybox:1.35
+          command: ['sh', '-c', 'until nc -zv $MYSQL_HOST $MYSQL_PORT; do echo waiting for DB; sleep 2; done']
+          env:
+            - name: MYSQL_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: MYSQL_HOST
+            - name: MYSQL_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: MYSQL_PORT
+
+      containers:
+        - name: cms
+          image: openedx/cms:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8010
+              protocol: TCP
+          
+          env:
+            - name: CMS_DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: OPENEDX_DOMAIN
+            - name: MYSQL_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: MYSQL_HOST
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: openedx-db-credentials
+                  key: mysql_username
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: openedx-db-credentials
+                  key: mysql_password
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: REDIS_HOST
+            - name: ENVIRONMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: ENVIRONMENT
+          
+          resources:
+            requests:
+              cpu: 400m
+              memory: 256Mi
+            limits:
+              cpu: 800m
+              memory: 512Mi
+          
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          
+          volumeMounts:
+            - name: static
+              mountPath: /var/lib/openedx/static
+            - name: logs
+              mountPath: /var/log/openedx
+      
+      volumes:
+        - name: static
+          persistentVolumeClaim:
+            claimName: openedx-static-pvc
+        - name: logs
+          emptyDir: {}
+
+---
+# OpenEdX Worker Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openedx-worker
+  namespace: openedx
+  labels:
+    app: openedx
+    component: worker
+    version: v1
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: openedx
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: openedx
+        component: worker
+    spec:
+      serviceAccountName: openedx-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      
+      containers:
+        - name: worker
+          image: openedx/worker:latest
+          imagePullPolicy: Always
+          
+          env:
+            - name: MYSQL_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: MYSQL_HOST
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: openedx-db-credentials
+                  key: mysql_username
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: openedx-db-credentials
+                  key: mysql_password
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: REDIS_HOST
+            - name: REDIS_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: openedx-db-credentials
+                  key: redis_auth_token
+            - name: ENVIRONMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: openedx-config
+                  key: ENVIRONMENT
+          
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/openedx
+      
+      volumes:
+        - name: logs
+          emptyDir: {}
