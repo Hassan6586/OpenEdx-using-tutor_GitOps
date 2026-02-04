@@ -33,22 +33,6 @@ This guide covers how to deploy and operate OpenEdX on AWS. It's organized by to
 - **Storage on EFS** - Uploads and static files go to Elastic File System. Survives pod restarts.
 - **OIDC for IRSA** - Pods assume IAM roles instead of using credentials in the container.
 
-│  │  │  - Media files                   │               │   │
-│  │  └──────────────────────────────────┘               │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                         ↓                                   │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │         External AWS Managed Services                │   │
-│  ├──────────────────────────────────────────────────────┤   │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐             │   │
-│  │  │ RDS MySQL│ │DocumentDB│ │ElastiCache│            │   │
-│  │  │ (Aurora) │ │(MongoDB) │ │ (Redis)  │             │   │
-│  │  └──────────┘ └──────────┘ └──────────┘             │   │
-│  │  ┌──────────┐ ┌──────────┐                          │   │
-│  │  │OpenSearch│ │S3 Buckets│                          │   │
-│  │  └──────────┘ └──────────┘                          │   │
-│  └──────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
 ```
 
 ## Prerequisites
