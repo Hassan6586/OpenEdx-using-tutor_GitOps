@@ -36,13 +36,13 @@ This guide covers how to deploy and operate OpenEdX on AWS. It's organized by to
 │  │  │  - Media files                   │               │   │
 │  │  └──────────────────────────────────┘               │   │
 │  └──────────────────────────────────────────────────────┘   │
-│                         ↓                                     │
+│                         ↓                                   │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │         External AWS Managed Services                │   │
 │  ├──────────────────────────────────────────────────────┤   │
 │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐             │   │
 │  │  │ RDS MySQL│ │DocumentDB│ │ElastiCache│            │   │
-│  │  │ (Aurora) │ │(MongoDB) │ │ (Redis)  │            │   │
+│  │  │ (Aurora) │ │(MongoDB) │ │ (Redis)  │             │   │
 │  │  └──────────┘ └──────────┘ └──────────┘             │   │
 │  │  ┌──────────┐ ┌──────────┐                          │   │
 │  │  │OpenSearch│ │S3 Buckets│                          │   │
