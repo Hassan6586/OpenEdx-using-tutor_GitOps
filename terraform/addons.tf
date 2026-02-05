@@ -6,90 +6,66 @@
 # NGINX INGRESS CONTROLLER
 # =============================================================================
 
-resource "helm_release" "nginx_ingress" {
-  name       = "ingress-nginx"
-  repository = "https://kubernetes.github.io/ingress-nginx"
-  chart      = "ingress-nginx"
-  version    = "4.10.0"
-  namespace  = "ingress-nginx"
-
-  create_namespace = true
-
-  values = [
-    yamlencode({
-      controller = {
-        service = {
-          type               = "LoadBalancer"
-          externalTrafficPolicy = "Local"
-          annotations = {
-            "service.beta.kubernetes.io/aws-load-balancer-type" = "nlb"
-            "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled" = "true"
-          }
-        }
-        resources = {
-          requests = {
-            cpu    = "100m"
-            memory = "128Mi"
-          }
-          limits = {
-            cpu    = "500m"
-            memory = "512Mi"
-          }
-        }
-        autoscaling = {
-          enabled     = true
-          minReplicas = 2
-          maxReplicas = 10
-          targetCPUUtilizationPercentage = 80
-          targetMemoryUtilizationPercentage = 80
-        }
-        config = {
-          "use-forwarded-headers" = "true"
-          "compute-full-forwarded-for" = "true"
-          "use-proxy-protocol" = "true"
-          "enable-modsecurity" = "true"
-          "enable-owasp-core-rules" = "true"
-          "http2-max-field-size" = "16k"
-          "http2-max-header-size" = "16k"
-          "client-max-body-size" = "100m"
-          "keepalive-timeout" = "120"
-          "worker-processes" = "auto"
-        }
-        metrics = {
-          enabled = true
-          service = {
-            namespace = "ingress-nginx"
-          }
-        }
-        livenessProbe = {
-          httpGet = {
-            path   = "/healthz"
-            port   = 10254
-            scheme = "HTTP"
-          }
-          initialDelaySeconds = 10
-          periodSeconds       = 10
-        }
-        readinessProbe = {
-          httpGet = {
-            path   = "/healthz"
-            port   = 10254
-            scheme = "HTTP"
-          }
-          initialDelaySeconds = 5
-          periodSeconds       = 5
-        }
+enable_ingress_nginx = true
+  ingress_nginx = {
+    most_recent = true
+    namespace   = "ingress-nginx"
+    
+    # Basic configuration
+    set = [
+      {
+        name  = "controller.service.type"
+        value = "LoadBalancer"
+      },
+      {
+        name  = "controller.service.externalTrafficPolicy"
+        value = "Local"
+      },
+      {
+        name  = "controller.resources.requests.cpu"
+        value = "100m"
+      },
+      {
+        name  = "controller.resources.requests.memory"
+        value = "128Mi"
+      },
+      {
+        name  = "controller.resources.limits.cpu"
+        value = "200m"
+      },
+      {
+        name  = "controller.resources.limits.memory"
+        value = "256Mi"
       }
-      tcp = {}
-      udp = {}
-    })
-  ]
-
-  depends_on = [module.retail_app_eks.cluster_id]
-
-  tags = local.common_tags
-}
-
+    ]
+ # AWS Load Balancer specific annotations
+    set_sensitive = [
+      {
+        name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-scheme"
+        value = "internet-facing"
+      },
+      {
+        name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type"
+        value = "nlb"
+      },
+      {
+        name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-nlb-target-type"
+        value = "instance"
+      },
+      {
+        name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-health-check-path"
+        value = "/healthz"
+      },
+      {
+        name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-health-check-port"
+        value = "10254"
+      },
+      {
+        name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-health-check-protocol"
+        value = "HTTP"
+      }
+    ]
+  }
 # =============================================================================
 # CERT-MANAGER FOR SSL/TLS
 # =============================================================================
