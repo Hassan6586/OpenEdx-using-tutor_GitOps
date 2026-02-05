@@ -927,7 +927,7 @@ resource "aws_s3_bucket_policy" "openedx_static" {
 
 resource "aws_sns_topic" "openedx_alerts" {
   name              = "${local.cluster_name}-alerts"
-  kms_master_key_id = openedx.kms_key_arn
+  kms_master_key_id = module.retail_app_eks.kms_key_arn
 
   tags = merge(local.common_tags, { Name = "${local.cluster_name}-alerts" })
 }
@@ -935,5 +935,5 @@ resource "aws_sns_topic" "openedx_alerts" {
 resource "aws_sns_topic_subscription" "openedx_alerts_email" {
   topic_arn = aws_sns_topic.openedx_alerts.arn
   protocol  = "email"
-  endpoint  = var.mhassanjaved00001@gmail.com
+  endpoint  = var.alert_email
 }
