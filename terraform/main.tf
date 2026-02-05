@@ -1,5 +1,4 @@
-# =============================================================================
-# OPENEDX ON AWS EKS - INFRASTRUCTURE
+# OPENEDX ON AWS EKS - INFRASTRUCTURE (CORRECTED)
 # =============================================================================
 #
 # This sets up everything needed to run OpenEdX in production on AWS:
@@ -13,10 +12,57 @@
 # Takes about 15-20 minutes on first run
 
 # =============================================================================
+# LOCAL VALUES AND DATA SOURCES
+# =============================================================================
+
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+data "aws_caller_identity" "current" {}
+
+# Random suffix for unique resource names
+resource "random_string" "suffix" {
+  length  = 4
+  special = false
+  upper   = false
+}
+
+# Local computed values
+locals {
+  # Cluster configuration with unique suffix to avoid conflicts
+  cluster_name = "${var.cluster_name}-${random_string.suffix.result}"
+  
+  # Network configuration
+  azs             = slice(data.aws_availability_zones.available.names, 0, 3)
+  private_subnets = [for k, v in local.azs : cidrsubnet(var.vpc_cidr, 8, k + 10)]
+  public_subnets  = [for k, v in local.azs : cidrsubnet(var.vpc_cidr, 8, k)]
+  
+  # Common tags applied to all resources
+  common_tags = {
+    Environment = var.environment
+    Project     = "OpenEdX-LMS"
+    ManagedBy   = "terraform"
+    CreatedBy   = "Platform Team"
+    Owner       = data.aws_caller_identity.current.user_id
+    CreatedDate = formatdate("YYYY-MM-DD", timestamp())
+  }
+  
+  # Kubernetes subnet tags
+  public_subnet_tags = {
+    "kubernetes.io/cluster/${local.cluster_name}" = "shared"
+    "kubernetes.io/role/elb"                      = "1"
+  }
+  
+  private_subnet_tags = {
+    "kubernetes.io/cluster/${local.cluster_name}" = "shared"
+    "kubernetes.io/role/internal-elb"             = "1"
+  }
+}
+
+# =============================================================================
 # VPC CONFIGURATION
 # =============================================================================
-# Network spans 3 AZs for redundancy. Public subnets for load balancers,
-# private subnets for the actual workloads. NAT gateways for outbound traffic.
 
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
@@ -29,11 +75,11 @@ module "vpc" {
   public_subnets  = local.public_subnets
   private_subnets = local.private_subnets
 
-  # NAT for private subnets to talk to the internet
+  # NAT for private subnets
   enable_nat_gateway = true
   single_nat_gateway = var.enable_single_nat_gateway
 
-  # Internet Gateway for public traffic
+  # Internet Gateway
   create_igw = true
 
   # Enable DNS
@@ -48,7 +94,7 @@ module "vpc" {
   manage_default_security_group = true
   default_security_group_tags   = { Name = "${var.cluster_name}-default-sg" }
 
-  # Tag subnets for EKS to find them
+  # Tag subnets for EKS
   public_subnet_tags  = merge(local.common_tags, local.public_subnet_tags)
   private_subnet_tags = merge(local.common_tags, local.private_subnet_tags)
 
@@ -58,14 +104,11 @@ module "vpc" {
 # =============================================================================
 # SECURITY GROUPS
 # =============================================================================
-# Control what can talk to what. RDS, databases, ElastiCache, etc. all
-# hidden behind security groups. Nothing exposed to the internet except
-# through the load balancer.
 
-# Security group for RDS
 resource "aws_security_group" "rds_sg" {
-  name   = "${local.cluster_name}-rds-sg"
-  vpc_id = module.vpc.vpc_id
+  name        = "${local.cluster_name}-rds-sg"
+  description = "Security group for RDS MySQL"
+  vpc_id      = module.vpc.vpc_id
 
   ingress {
     from_port       = 3306
@@ -80,15 +123,16 @@ resource "aws_security_group" "rds_sg" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow all outbound"
   }
 
   tags = merge(local.common_tags, { Name = "${local.cluster_name}-rds-sg" })
 }
 
-# Security group for ElastiCache (Redis)
 resource "aws_security_group" "elasticache_sg" {
-  name   = "${local.cluster_name}-elasticache-sg"
-  vpc_id = module.vpc.vpc_id
+  name        = "${local.cluster_name}-elasticache-sg"
+  description = "Security group for ElastiCache Redis"
+  vpc_id      = module.vpc.vpc_id
 
   ingress {
     from_port       = 6379
@@ -103,15 +147,16 @@ resource "aws_security_group" "elasticache_sg" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow all outbound"
   }
 
   tags = merge(local.common_tags, { Name = "${local.cluster_name}-elasticache-sg" })
 }
 
-# Security group for DocumentDB (MongoDB)
 resource "aws_security_group" "documentdb_sg" {
-  name   = "${local.cluster_name}-documentdb-sg"
-  vpc_id = module.vpc.vpc_id
+  name        = "${local.cluster_name}-documentdb-sg"
+  description = "Security group for DocumentDB"
+  vpc_id      = module.vpc.vpc_id
 
   ingress {
     from_port       = 27017
@@ -126,22 +171,23 @@ resource "aws_security_group" "documentdb_sg" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow all outbound"
   }
 
   tags = merge(local.common_tags, { Name = "${local.cluster_name}-documentdb-sg" })
 }
 
-# Security group for OpenSearch (Elasticsearch)
 resource "aws_security_group" "opensearch_sg" {
-  name   = "${local.cluster_name}-opensearch-sg"
-  vpc_id = module.vpc.vpc_id
+  name        = "${local.cluster_name}-opensearch-sg"
+  description = "Security group for OpenSearch"
+  vpc_id      = module.vpc.vpc_id
 
   ingress {
     from_port       = 443
     to_port         = 443
     protocol        = "tcp"
     security_groups = [module.retail_app_eks.cluster_security_group_id]
-    description     = "OpenSearch from EKS"
+    description     = "HTTPS from EKS"
   }
 
   ingress {
@@ -157,9 +203,34 @@ resource "aws_security_group" "opensearch_sg" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow all outbound"
   }
 
   tags = merge(local.common_tags, { Name = "${local.cluster_name}-opensearch-sg" })
+}
+
+resource "aws_security_group" "efs_sg" {
+  name        = "${local.cluster_name}-efs-sg"
+  description = "Security group for EFS"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    from_port       = 2049
+    to_port         = 2049
+    protocol        = "tcp"
+    security_groups = [module.retail_app_eks.cluster_security_group_id]
+    description     = "NFS from EKS"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow all outbound"
+  }
+
+  tags = merge(local.common_tags, { Name = "${local.cluster_name}-efs-sg" })
 }
 
 # =============================================================================
@@ -170,33 +241,33 @@ module "retail_app_eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 20.31"
 
-  # Basic cluster configuration
   cluster_name    = local.cluster_name
   cluster_version = var.kubernetes_version
 
-  # Cluster access configuration
+  # Cluster access
   cluster_endpoint_public_access           = true
   cluster_endpoint_private_access          = true
   enable_cluster_creator_admin_permissions = true
 
-  # Network configuration
+  # Network
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
-  # KMS configuration for encryption
-  create_kms_key              = true
-  kms_key_description         = "EKS cluster ${local.cluster_name} encryption key"
-  kms_key_deletion_window_in_days = 7
+  # KMS encryption
+  create_kms_key                      = true
+  kms_key_description                 = "EKS cluster ${local.cluster_name} encryption key"
+  kms_key_deletion_window_in_days     = 7
+  enable_kms_key_rotation             = true
 
-  # Cluster logging
+  # Logging
   cluster_enabled_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
-  # Managed node group configuration
+  # Managed node groups
   eks_managed_node_groups = {
     main = {
       name            = "${local.cluster_name}-node-group"
       use_name_prefix = true
-      capacity_type   = "on-demand"
+      capacity_type   = "ON_DEMAND"
       disk_size       = 100
 
       min_size     = var.min_worker_nodes
@@ -210,18 +281,15 @@ module "retail_app_eks" {
         Component   = "openedx"
       }
 
-      taints = []
-
       tags = merge(local.common_tags, {
         "NodeGroup" = "main"
       })
     }
 
-    # Additional node group for heavy workloads
     compute = {
       name            = "${local.cluster_name}-compute-group"
       use_name_prefix = true
-      capacity_type   = "on-demand"
+      capacity_type   = "ON_DEMAND"
       disk_size       = 100
 
       min_size     = 1
@@ -250,43 +318,15 @@ module "retail_app_eks" {
 
   # Cluster addons
   cluster_addons = {
-    aws-ebs-csi-driver = {
+    coredns = {
       most_recent = true
-      configuration = {
-        resources = {
-          limits = {
-            cpu    = "100m"
-            memory = "150Mi"
-          }
-          requests = {
-            cpu    = "10m"
-            memory = "15Mi"
-          }
-        }
-      }
     }
-    
-    aws-efs-csi-driver = {
+
+    kube-proxy = {
       most_recent = true
     }
 
     vpc-cni = {
-      most_recent = true
-      configuration = {
-        env = {
-          ENABLE_WINDOWS_IPAM = "true"
-        }
-      }
-    }
-
-    coredns = {
-      most_recent = true
-      configuration = {
-        computeType = "Fargate"
-      }
-    }
-
-    kube-proxy = {
       most_recent = true
     }
   }
@@ -295,7 +335,39 @@ module "retail_app_eks" {
 }
 
 # =============================================================================
-# RDS MySQL Instance (Aurora)
+# RANDOM PASSWORDS
+# =============================================================================
+
+resource "random_password" "mysql_password" {
+  length  = 32
+  special = true
+  override_special = "!#$%&*()-_=+[]{}<>:?"
+}
+
+resource "random_password" "mongodb_password" {
+  length  = 32
+  special = true
+  override_special = "!#$%&*()-_=+[]{}<>:?"
+}
+
+resource "random_password" "redis_auth_token" {
+  length  = 64
+  special = false  # Redis auth tokens work better without special chars
+}
+
+# =============================================================================
+# DB SUBNET GROUP
+# =============================================================================
+
+resource "aws_db_subnet_group" "openedx" {
+  name       = "${local.cluster_name}-db-subnet-group"
+  subnet_ids = module.vpc.private_subnets
+
+  tags = merge(local.common_tags, { Name = "${local.cluster_name}-db-subnet" })
+}
+
+# =============================================================================
+# RDS MySQL Cluster (Aurora)
 # =============================================================================
 
 resource "aws_rds_cluster" "openedx_mysql" {
@@ -312,12 +384,14 @@ resource "aws_rds_cluster" "openedx_mysql" {
   backup_retention_period      = var.rds_backup_retention
   preferred_backup_window      = "03:00-04:00"
   preferred_maintenance_window = "mon:04:00-mon:05:00"
-  skip_final_snapshot          = var.environment == "dev" ? true : false
-  final_snapshot_identifier    = var.environment == "dev" ? null : "${local.cluster_name}-mysql-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}"
+  
+  skip_final_snapshot       = var.environment == "dev" ? true : false
+  final_snapshot_identifier = var.environment == "dev" ? null : "${local.cluster_name}-mysql-final-${formatdate("YYYY-MM-DD-hhmm", timestamp())}"
 
   enabled_cloudwatch_logs_exports = ["error", "general", "slowquery"]
   
-  multi_az = var.enable_multi_az
+  storage_encrypted = true
+  kms_key_id        = module.retail_app_eks.kms_key_arn
 
   tags = merge(local.common_tags, { Name = "${local.cluster_name}-mysql" })
 }
@@ -332,6 +406,9 @@ resource "aws_rds_cluster_instance" "openedx_mysql" {
 
   monitoring_interval = 60
   monitoring_role_arn = aws_iam_role.rds_monitoring.arn
+  
+  performance_insights_enabled    = true
+  performance_insights_kms_key_id = module.retail_app_eks.kms_key_arn
 
   tags = merge(local.common_tags, { Name = "${local.cluster_name}-mysql-instance-${count.index + 1}" })
 }
@@ -360,38 +437,15 @@ resource "aws_iam_role_policy_attachment" "rds_monitoring" {
 }
 
 # =============================================================================
-# DB Subnet Group
-# =============================================================================
-
-resource "aws_db_subnet_group" "openedx" {
-  name       = "${local.cluster_name}-db-subnet-group"
-  subnet_ids = module.vpc.private_subnets
-
-  tags = merge(local.common_tags, { Name = "${local.cluster_name}-db-subnet" })
-}
-
-# =============================================================================
-# RANDOM PASSWORDS
-# =============================================================================
-
-resource "random_password" "mysql_password" {
-  length  = 32
-  special = true
-}
-
-resource "random_password" "mongodb_password" {
-  length  = 32
-  special = true
-}
-
-resource "random_password" "redis_auth_token" {
-  length  = 32
-  special = false
-}
-
-# =============================================================================
 # DocumentDB Cluster (MongoDB Compatible)
 # =============================================================================
+
+resource "aws_docdb_subnet_group" "openedx" {
+  name       = "${local.cluster_name}-docdb-subnet-group"
+  subnet_ids = module.vpc.private_subnets
+
+  tags = merge(local.common_tags, { Name = "${local.cluster_name}-docdb-subnet" })
+}
 
 resource "aws_docdb_cluster" "openedx_mongodb" {
   cluster_identifier      = "${local.cluster_name}-mongodb"
@@ -399,12 +453,18 @@ resource "aws_docdb_cluster" "openedx_mongodb" {
   master_password         = random_password.mongodb_password.result
   db_subnet_group_name    = aws_docdb_subnet_group.openedx.name
   vpc_security_group_ids  = [aws_security_group.documentdb_sg.id]
+  
   backup_retention_period = var.rds_backup_retention
   preferred_backup_window = "03:00-04:00"
-  skip_final_snapshot     = var.environment == "dev" ? true : false
+  preferred_maintenance_window = "mon:04:00-mon:05:00"
+  
+  skip_final_snapshot       = var.environment == "dev" ? true : false
   final_snapshot_identifier = var.environment == "dev" ? null : "${local.cluster_name}-mongodb-final-${formatdate("YYYY-MM-DD-hhmm", timestamp())}"
 
-  enabled_cloudwatch_logs_exports = ["audit", "error", "general", "slowquery"]
+  enabled_cloudwatch_logs_exports = ["audit", "profiler"]
+  
+  storage_encrypted = true
+  kms_key_id        = module.retail_app_eks.kms_key_arn
 
   tags = merge(local.common_tags, { Name = "${local.cluster_name}-mongodb" })
 }
@@ -414,46 +474,12 @@ resource "aws_docdb_cluster_instance" "openedx_mongodb" {
   identifier         = "${local.cluster_name}-mongodb-${count.index + 1}"
   cluster_identifier = aws_docdb_cluster.openedx_mongodb.id
   instance_class     = "db.t3.medium"
-  engine              = aws_docdb_cluster.openedx_mongodb.engine
-
-  monitor_performance_main_enabled = true
-  monitoring_interval             = 60
-  monitoring_role_arn            = aws_iam_role.docdb_monitoring.arn
 
   tags = merge(local.common_tags, { Name = "${local.cluster_name}-mongodb-instance-${count.index + 1}" })
 }
 
-resource "aws_docdb_subnet_group" "openedx" {
-  name       = "${local.cluster_name}-docdb-subnet-group"
-  subnet_ids = module.vpc.private_subnets
-
-  tags = merge(local.common_tags, { Name = "${local.cluster_name}-docdb-subnet" })
-}
-
-resource "aws_iam_role" "docdb_monitoring" {
-  name = "${local.cluster_name}-docdb-monitoring"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "monitoring.docdb.amazonaws.com"
-      }
-    }]
-  })
-
-  tags = local.common_tags
-}
-
-resource "aws_iam_role_policy_attachment" "docdb_monitoring" {
-  role       = aws_iam_role.docdb_monitoring.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonDocDBMonitoringRolePolicy"
-}
-
 # =============================================================================
-# ElastiCache Redis
+# ElastiCache Redis (CORRECTED - Replication Group for HA)
 # =============================================================================
 
 resource "aws_elasticache_subnet_group" "openedx" {
@@ -463,32 +489,49 @@ resource "aws_elasticache_subnet_group" "openedx" {
   tags = merge(local.common_tags, { Name = "${local.cluster_name}-redis-subnet" })
 }
 
-resource "aws_elasticache_cluster" "openedx_redis" {
-  cluster_id           = "${local.cluster_name}-redis"
+# CORRECTED: Using Replication Group instead of Cluster for HA
+resource "aws_elasticache_replication_group" "openedx_redis" {
+  replication_group_id       = "${local.cluster_name}-redis"
+  replication_group_description = "Redis for OpenEdX"
+  
   engine               = "redis"
   engine_version       = "7.0"
   node_type            = var.redis_node_type
-  num_cache_nodes      = 1
-  parameter_group_name = "default.redis7"
-  engine_version_actual = "7.0.12"
+  num_cache_clusters   = 2  # 1 primary + 1 replica
   port                 = 6379
+  parameter_group_name = "default.redis7"
+  
   subnet_group_name    = aws_elasticache_subnet_group.openedx.name
   security_group_ids   = [aws_security_group.elasticache_sg.id]
 
-  automatic_failover_enabled = false
+  # Enable automatic failover for HA
+  automatic_failover_enabled = true
+  multi_az_enabled          = true
+  
+  # Encryption
   at_rest_encryption_enabled = true
   transit_encryption_enabled = true
   auth_token                 = random_password.redis_auth_token.result
-
-  apply_immediately = var.environment == "dev" ? true : false
   
-  maintenance_window = "sun:03:00-sun:04:00"
+  # Maintenance
+  apply_immediately   = var.environment == "dev" ? true : false
+  maintenance_window  = "sun:03:00-sun:04:00"
+  snapshot_window     = "02:00-03:00"
+  snapshot_retention_limit = var.environment == "production" ? 7 : 1
 
+  # Logging
   log_delivery_configuration {
     destination      = aws_cloudwatch_log_group.redis_slow_log.name
     destination_type = "cloudwatch-logs"
     log_format       = "json"
     log_type         = "slow-log"
+  }
+  
+  log_delivery_configuration {
+    destination      = aws_cloudwatch_log_group.redis_engine_log.name
+    destination_type = "cloudwatch-logs"
+    log_format       = "json"
+    log_type         = "engine-log"
   }
 
   tags = merge(local.common_tags, { Name = "${local.cluster_name}-redis" })
@@ -501,24 +544,38 @@ resource "aws_cloudwatch_log_group" "redis_slow_log" {
   tags = merge(local.common_tags, { Name = "${local.cluster_name}-redis-slow-log" })
 }
 
+resource "aws_cloudwatch_log_group" "redis_engine_log" {
+  name              = "/aws/elasticache/${local.cluster_name}-redis-engine-log"
+  retention_in_days = 7
+
+  tags = merge(local.common_tags, { Name = "${local.cluster_name}-redis-engine-log" })
+}
+
 # =============================================================================
 # OpenSearch (Elasticsearch)
 # =============================================================================
 
 resource "aws_opensearch_domain" "openedx" {
-  domain_name            = "${local.cluster_name}-search"
-  engine_version         = "OpenSearch_${var.elasticsearch_version}"
+  domain_name    = "${local.cluster_name}-search"
+  engine_version = "OpenSearch_${var.elasticsearch_version}"
+  
   cluster_config {
     instance_type          = "t3.small.search"
     instance_count         = 3
     dedicated_master_enabled = false
-    warm_enabled           = false
+    zone_awareness_enabled   = true
+    
+    zone_awareness_config {
+      availability_zone_count = 3
+    }
   }
 
   ebs_options {
     ebs_enabled = true
     volume_size = 30
     volume_type = "gp3"
+    iops        = 3000
+    throughput  = 125
   }
 
   vpc_options {
@@ -536,9 +593,11 @@ resource "aws_opensearch_domain" "openedx" {
   }
 
   encryption_at_rest {
-    enabled = true
+    enabled    = true
+    kms_key_id = module.retail_app_eks.kms_key_arn
   }
 
+  # CORRECTED: Simplified access policy
   access_policies = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -549,21 +608,23 @@ resource "aws_opensearch_domain" "openedx" {
       Action   = "es:*"
       Resource = "arn:aws:es:${var.aws_region}:${data.aws_caller_identity.current.account_id}:domain/${local.cluster_name}-search/*"
       Condition = {
-        StringEquals = {
-          "aws:PrincipalOrgID" = data.aws_caller_identity.current.account_id
+        IpAddress = {
+          "aws:SourceIp" = module.vpc.vpc_cidr_block
         }
       }
     }]
   })
 
   log_publishing_options {
-    cloudwatch_log_group_arn = "${aws_cloudwatch_log_group.opensearch_log.arn}:*"
-    log_group_name           = aws_cloudwatch_log_group.opensearch_log.name
-    enabled                  = true
+    cloudwatch_log_group_arn = aws_cloudwatch_log_group.opensearch_log.arn
     log_type                 = "ES_APPLICATION_LOGS"
+    enabled                  = true
   }
 
-  depends_on = [aws_cloudwatch_log_resource_policy.opensearch]
+  depends_on = [
+    aws_cloudwatch_log_resource_policy.opensearch,
+    aws_cloudwatch_log_group.opensearch_log
+  ]
 
   tags = merge(local.common_tags, { Name = "${local.cluster_name}-opensearch" })
 }
@@ -578,15 +639,18 @@ resource "aws_cloudwatch_log_group" "opensearch_log" {
 resource "aws_cloudwatch_log_resource_policy" "opensearch" {
   policy_name = "${local.cluster_name}-opensearch-log-policy"
 
-  policy_text = jsonencode({
+  policy_document = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect = "Allow"
       Principal = {
         Service = "es.amazonaws.com"
       }
-      Action   = ["logs:PutLogEvents", "logs:CreateLogStream", "logs:CreateLogGroup"]
-      Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*"
+      Action = [
+        "logs:PutLogEvents",
+        "logs:CreateLogStream"
+      ]
+      Resource = "${aws_cloudwatch_log_group.opensearch_log.arn}:*"
     }]
   })
 }
@@ -598,7 +662,13 @@ resource "aws_cloudwatch_log_resource_policy" "opensearch" {
 resource "aws_efs_file_system" "openedx" {
   creation_token   = "${local.cluster_name}-efs"
   encrypted        = true
+  kms_key_id       = module.retail_app_eks.kms_key_arn
   throughput_mode  = "bursting"
+  performance_mode = "generalPurpose"
+
+  lifecycle_policy {
+    transition_to_ia = "AFTER_30_DAYS"
+  }
 
   tags = merge(local.common_tags, { Name = "${local.cluster_name}-efs" })
 }
@@ -606,31 +676,9 @@ resource "aws_efs_file_system" "openedx" {
 resource "aws_efs_mount_target" "openedx" {
   for_each = toset(module.vpc.private_subnets)
 
-  file_system_id      = aws_efs_file_system.openedx.id
-  subnet_id           = each.value
-  security_groups     = [aws_security_group.efs_sg.id]
-}
-
-resource "aws_security_group" "efs_sg" {
-  name   = "${local.cluster_name}-efs-sg"
-  vpc_id = module.vpc.vpc_id
-
-  ingress {
-    from_port       = 2049
-    to_port         = 2049
-    protocol        = "tcp"
-    security_groups = [module.retail_app_eks.cluster_security_group_id]
-    description     = "NFS from EKS"
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = merge(local.common_tags, { Name = "${local.cluster_name}-efs-sg" })
+  file_system_id  = aws_efs_file_system.openedx.id
+  subnet_id       = each.value
+  security_groups = [aws_security_group.efs_sg.id]
 }
 
 # =============================================================================
@@ -641,6 +689,33 @@ resource "aws_s3_bucket" "openedx_static" {
   bucket = "${local.cluster_name}-static-${data.aws_caller_identity.current.account_id}"
 
   tags = merge(local.common_tags, { Name = "${local.cluster_name}-static-bucket" })
+}
+
+resource "aws_s3_bucket_versioning" "openedx_static" {
+  bucket = aws_s3_bucket.openedx_static.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "openedx_static" {
+  bucket = aws_s3_bucket.openedx_static.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "openedx_static" {
+  bucket = aws_s3_bucket.openedx_static.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
 }
 
 resource "aws_s3_bucket" "openedx_backups" {
@@ -654,6 +729,16 @@ resource "aws_s3_bucket_versioning" "openedx_backups" {
 
   versioning_configuration {
     status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "openedx_backups" {
+  bucket = aws_s3_bucket.openedx_backups.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
   }
 }
 
@@ -676,20 +761,30 @@ resource "aws_s3_bucket_lifecycle_configuration" "openedx_backups" {
 }
 
 # =============================================================================
-# WAF (Web Application Firewall)
+# WAF (Web Application Firewall) - CORRECTED for CloudFront
 # =============================================================================
 
+# Provider for CloudFront WAF (must be us-east-1)
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+}
+
 resource "aws_wafv2_ip_set" "trusted_ips" {
+  provider = aws.us_east_1
+  
   name               = "${local.cluster_name}-trusted-ips"
   description        = "Trusted IPs for OpenEdX"
   scope              = "CLOUDFRONT"
   ip_address_version = "IPV4"
-  address_set        = [] # Add your trusted IPs here
+  addresses          = var.trusted_ip_addresses  # Add your IPs
 
   tags = merge(local.common_tags, { Name = "${local.cluster_name}-trusted-ips" })
 }
 
 resource "aws_wafv2_web_acl" "openedx" {
+  provider = aws.us_east_1
+  
   name  = "${local.cluster_name}-waf-acl"
   scope = "CLOUDFRONT"
 
@@ -754,6 +849,10 @@ resource "aws_wafv2_web_acl" "openedx" {
 # CloudFront Distribution for Static Assets
 # =============================================================================
 
+resource "aws_cloudfront_origin_access_identity" "openedx" {
+  comment = "OAI for ${local.cluster_name}"
+}
+
 resource "aws_cloudfront_distribution" "openedx_static" {
   origin {
     domain_name = aws_s3_bucket.openedx_static.bucket_regional_domain_name
@@ -767,9 +866,10 @@ resource "aws_cloudfront_distribution" "openedx_static" {
   enabled             = true
   default_root_object = "index.html"
   is_ipv6_enabled     = true
+  price_class         = "PriceClass_100"
 
   default_cache_behavior {
-    allowed_methods  = ["GET", "HEAD"]
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
     cached_methods   = ["GET", "HEAD"]
     target_origin_id = "S3Origin"
 
@@ -803,10 +903,6 @@ resource "aws_cloudfront_distribution" "openedx_static" {
   tags = merge(local.common_tags, { Name = "${local.cluster_name}-cloudfront" })
 }
 
-resource "aws_cloudfront_origin_access_identity" "openedx" {
-  comment = "OAI for ${local.cluster_name}"
-}
-
 # S3 Bucket policy for CloudFront
 resource "aws_s3_bucket_policy" "openedx_static" {
   bucket = aws_s3_bucket.openedx_static.id
@@ -830,7 +926,8 @@ resource "aws_s3_bucket_policy" "openedx_static" {
 # =============================================================================
 
 resource "aws_sns_topic" "openedx_alerts" {
-  name = "${local.cluster_name}-alerts"
+  name              = "${local.cluster_name}-alerts"
+  kms_master_key_id = openedx.kms_key_arn
 
   tags = merge(local.common_tags, { Name = "${local.cluster_name}-alerts" })
 }
@@ -838,5 +935,5 @@ resource "aws_sns_topic" "openedx_alerts" {
 resource "aws_sns_topic_subscription" "openedx_alerts_email" {
   topic_arn = aws_sns_topic.openedx_alerts.arn
   protocol  = "email"
-  endpoint  = "alerts@example.com"
+  endpoint  = var.mhassanjaved00001@gmail.com
 }
