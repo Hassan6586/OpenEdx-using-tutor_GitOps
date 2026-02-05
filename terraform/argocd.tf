@@ -124,7 +124,7 @@ resource "helm_release" "argocd" {
     })
   ]
 
-  depends_on = [module.retail_app_eks.cluster_id]
+  depends_on = [openedx.cluster_id]
 
   tags = local.common_tags
 }
